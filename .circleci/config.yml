@@ -54,7 +54,7 @@ jobs:
           name: Install dependencies
           command: |
               sudo apt update
-              sudo apt install libdbus-1-dev pkg-config musl-tools -y
+              sudo apt install libdbus-1-dev pkg-config musl-tools mingw-w64 -y
       - run:
           name: Add Windows target
           command: rustup target add x86_64-pc-windows-gnu
