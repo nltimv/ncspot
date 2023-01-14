@@ -18,7 +18,7 @@ jobs:
           name: Install dependencies
           command: |
               sudo apt update
-              sudo apt install libdbus-1-dev pkg-config -y
+              sudo apt install libdbus-1-dev libncursesw5-dev libpulse-dev libssl-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config -y
       - run: 
           name: Build ncspot
           command: cargo build --release --target x86_64-unknown-linux-gnu
@@ -35,7 +35,7 @@ jobs:
           name: Install dependencies
           command: |
               sudo apt update
-              sudo apt install libdbus-1-dev pkg-config -y
+              sudo apt install libdbus-1-dev libncursesw5-dev libpulse-dev libssl-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config -y
               cargo install cargo-deb
       - run: 
           name: Build ncspot
@@ -54,7 +54,7 @@ jobs:
           name: Install dependencies
           command: |
               sudo apt update
-              sudo apt install libdbus-1-dev pkg-config musl-tools mingw-w64 -y
+              sudo apt install libdbus-1-dev libncursesw5-dev libpulse-dev libssl-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev pkg-config musl-tools mingw-w64 -y
       - run:
           name: Add Windows target
           command: rustup target add x86_64-pc-windows-gnu
