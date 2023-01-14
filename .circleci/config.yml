@@ -14,8 +14,14 @@ jobs:
     # See: https://circleci.com/docs/2.0/configuration-reference/#steps
     steps:
       - checkout
-      - run: |
-          cargo build --release --target x86_64-unknown-linux-gnu
+      - run:
+          name: Install dependencies
+          command: |
+              sudo apt update
+              sudo apt install libdbus-1-dev pkg-config -y
+      - run: 
+          name: Build ncspot
+          command: cargo build --release --target x86_64-unknown-linux-gnu
   build-debian:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
     # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
@@ -25,9 +31,16 @@ jobs:
     # See: https://circleci.com/docs/2.0/configuration-reference/#steps
     steps:
       - checkout
-      - run: |
-          cargo install cargo-deb
-          cargo deb
+      - run:
+          name: Install dependencies
+          command: |
+              sudo apt update
+              sudo apt install libdbus-1-dev pkg-config -y
+              cargo install cargo-deb
+      - run: 
+          name: Build ncspot
+          command: cargo deb
+          
   build-windows:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
     # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
@@ -37,9 +50,17 @@ jobs:
     # See: https://circleci.com/docs/2.0/configuration-reference/#steps
     steps:
       - checkout
-      - run: |
-          rustup target add x86_64-pc-windows-gnu
-          cargo build --release --target x86_64-pc-windows-gnu --no-default-features --features rodio_backend,pancurses_backend
+      - run:
+          name: Install dependencies
+          command: |
+              sudo apt update
+              sudo apt install libdbus-1-dev pkg-config musl-tools -y
+      - run:
+          name: Add Windows target
+          command: rustup target add x86_64-pc-windows-gnu
+      - run: 
+          name: Build ncspot
+          command: cargo build --release --target x86_64-pc-windows-gnu --no-default-features --features rodio_backend,pancurses_backend
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
