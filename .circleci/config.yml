@@ -116,16 +116,22 @@ workflows:
     jobs:
       - build-linux:
           filters:
-                tags:
-                  only: /.*/
+            branches:
+              ignore: main
+            tags:
+              only: /.*/
       - build-debian:
           filters:
-                tags:
-                  only: /.*/
+            branches:
+              ignore: main
+            tags:
+              only: /.*/
       - build-windows:
           filters:
-                tags:
-                  only: /.*/
+            branches:
+              ignore: main
+            tags:
+              only: /.*/
       - publish-release:
           requires:
             - build-linux
