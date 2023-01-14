@@ -100,9 +100,9 @@ jobs:
       - run:
           name: "Rename artifact files"
           command: |
-            mv ./artifacts/ncspot.tar.gz ncspot-${CIRCLE_TAG}-linux-x86_64.tar.gz
-            mv ./artifacts/ncspot.deb ncspot-${CIRCLE_TAG}-debian.deb
-            mv ./artifacts/ncspot.exe ncspot-${CIRCLE_TAG}-windows-x86_64.exe
+            mv ./artifacts/ncspot.tar.gz ./artifacts/ncspot-${CIRCLE_TAG}-linux-x86_64.tar.gz
+            mv ./artifacts/ncspot.deb ./artifacts/ncspot-${CIRCLE_TAG}-debian.deb
+            mv ./artifacts/ncspot.exe ./artifacts/ncspot-${CIRCLE_TAG}-windows-x86_64.exe
       - run:
           name: "Publish Release on GitHub"
           command: |
