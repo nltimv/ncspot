@@ -57,7 +57,7 @@ jobs:
           path: target/debian/ncspot.deb
           destination: ncspot.deb
       - persist_to_workspace:
-          root: target/debian/release
+          root: target/debian
           paths:
             - ncspot.deb
           
@@ -93,6 +93,7 @@ jobs:
   publish-release:
     docker:
       - image: circleci/golang:1.8
+    resource_class: small
     steps:
       - attach_workspace:
           at: ./artifacts
