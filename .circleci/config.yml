@@ -22,6 +22,12 @@ jobs:
       - run: 
           name: Build ncspot
           command: cargo build --release --target x86_64-unknown-linux-gnu
+      - run:
+          name: Package ncspot
+          command: tar -czvf target/x86_64-unknown-linux-gnu/release/ncspot.tar.gz target/x86_64-unknown-linux-gnu/release/ncspot
+      - store_artifacts:
+          path: target/x86_64-unknown-linux-gnu/release/ncspot.tar.gz
+          destination: ncspot.tar.gz
   build-debian:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
     # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
@@ -39,7 +45,10 @@ jobs:
               cargo install cargo-deb
       - run: 
           name: Build ncspot
-          command: cargo deb
+          command: cargo deb -o target/debian/ncspot.deb
+      - store_artifacts:
+          path: target/debian/ncspot.deb
+          destination: ncspot.deb
           
   build-windows:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
@@ -61,6 +70,9 @@ jobs:
       - run: 
           name: Build ncspot
           command: cargo build --release --target x86_64-pc-windows-gnu --no-default-features --features rodio_backend,pancurses_backend
+      - store_artifacts:
+          path: target/x86_64-pc-windows-gnu/release/ncspot.exe
+          destination: ncspot.exe
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
