@@ -92,7 +92,7 @@ jobs:
 
   publish-release:
     docker:
-      - image: circleci/golang:1.8
+      - image: cibuilds/github:0.10
     resource_class: small
     steps:
       - attach_workspace:
@@ -103,9 +103,6 @@ jobs:
             mv ./artifacts/ncspot.tar.gz ncspot-${CIRCLE_TAG}-linux-x86_64.tar.gz
             mv ./artifacts/ncspot.deb ncspot-${CIRCLE_TAG}-debian.deb
             mv ./artifacts/ncspot.exe ncspot-${CIRCLE_TAG}-windows-x86_64.exe
-      - run:
-          name: "Install dependencies"
-          command: go get github.com/tcnksm/ghr
       - run:
           name: "Publish Release on GitHub"
           command: ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${CIRCLE_TAG} ./artifacts/
