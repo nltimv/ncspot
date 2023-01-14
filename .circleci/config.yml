@@ -29,6 +29,11 @@ jobs:
       - store_artifacts:
           path: target/x86_64-unknown-linux-gnu/release/ncspot.tar.gz
           destination: ncspot.tar.gz
+      - persist_to_workspace:
+          root: target/x86_64-unknown-linux-gnu/release
+          paths:
+            - ncspot.tar.gz
+
   build-debian:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
     # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
@@ -51,6 +56,10 @@ jobs:
       - store_artifacts:
           path: target/debian/ncspot.deb
           destination: ncspot.deb
+      - persist_to_workspace:
+          root: target/debian/release
+          paths:
+            - ncspot.deb
           
   build-windows:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
@@ -76,12 +85,54 @@ jobs:
       - store_artifacts:
           path: target/x86_64-pc-windows-gnu/release/ncspot.exe
           destination: ncspot.exe
+      - persist_to_workspace:
+          root: target/x86_64-pc-windows-gnu/release
+          paths:
+            - ncspot.exe
+
+  publish-release:
+    docker:
+      - image: circleci/golang:1.8
+    steps:
+      - attach_workspace:
+          at: ./artifacts
+      - run:
+          name: "Rename artifact files"
+          command: |
+            mv ./artifacts/ncspot.tar.gz ncspot-${CIRCLE_TAG}-linux-x86_64.tar.gz
+            mv ./artifacts/ncspot.deb ncspot-${CIRCLE_TAG}-debian.deb
+            mv ./artifacts/ncspot.exe ncspot-${CIRCLE_TAG}-windows-x86_64.exe
+      - run:
+          name: "Install dependencies"
+          command: go get github.com/tcnksm/ghr
+      - run:
+          name: "Publish Release on GitHub"
+          command: ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${CIRCLE_TAG} ./artifacts/
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
 workflows:
   build:
     jobs:
-      - build-linux
-      - build-debian
-      - build-windows
+      - build-linux:
+          filters:
+                tags:
+                  only: /.*/
+      - build-debian:
+          filters:
+                tags:
+                  only: /.*/
+      - build-windows:
+          filters:
+                tags:
+                  only: /.*/
+      - publish-release:
+          requires:
+            - build-linux
+            - build-debian
+            - build-windows
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^\d+\.\d+\.\d+$/
