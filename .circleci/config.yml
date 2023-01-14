@@ -25,7 +25,7 @@ jobs:
           command: cargo build --release --target x86_64-unknown-linux-gnu
       - run:
           name: Package ncspot
-          command: tar -czvf target/x86_64-unknown-linux-gnu/release/ncspot.tar.gz target/x86_64-unknown-linux-gnu/release/ncspot
+          command: tar -czvf target/x86_64-unknown-linux-gnu/release/ncspot.tar.gz -C target/x86_64-unknown-linux-gnu/release/ ncspot
       - store_artifacts:
           path: target/x86_64-unknown-linux-gnu/release/ncspot.tar.gz
           destination: ncspot.tar.gz
