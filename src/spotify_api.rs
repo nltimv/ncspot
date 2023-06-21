@@ -1,3 +1,4 @@
+use crate::application::ASYNC_RUNTIME;
 use crate::model::album::Album;
 use crate::model::artist::Artist;
 use crate::model::category::Category;
@@ -7,7 +8,6 @@ use crate::model::playlist::Playlist;
 use crate::model::track::Track;
 use crate::spotify_worker::WorkerCommand;
 use crate::ui::pagination::{ApiPage, ApiResult};
-use crate::ASYNC_RUNTIME;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures::channel::oneshot;
 use log::{debug, error, info};
@@ -35,14 +35,20 @@ pub struct WebApi {
     token_expiration: Arc<RwLock<DateTime<Utc>>>,
 }
 
-impl WebApi {
-    pub fn new() -> WebApi {
-        WebApi {
+impl Default for WebApi {
+    fn default() -> Self {
+        Self {
             api: AuthCodeSpotify::default(),
             user: None,
             worker_channel: Arc::new(RwLock::new(None)),
             token_expiration: Arc::new(RwLock::new(Utc::now())),
         }
+    }
+}
+
+impl WebApi {
+    pub fn new() -> WebApi {
+        Self::default()
     }
 
     pub fn set_user(&mut self, user: Option<String>) {
@@ -153,7 +159,7 @@ impl WebApi {
             api.playlist_add_items(
                 PlaylistId::from_id(playlist_id).unwrap(),
                 trackids.iter().map(|id| id.as_ref()),
-                position,
+                position.map(|num| chrono::Duration::milliseconds(num as i64)),
             )
         })
         .is_some()

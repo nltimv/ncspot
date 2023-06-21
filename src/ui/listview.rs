@@ -125,6 +125,11 @@ impl<I: ListItem + Clone> ListView<I> {
         }
     }
 
+    /// Return whether this [ListView] has visible scrollbars.
+    pub fn has_visible_scrollbars(&self) -> bool {
+        self.scroller.get_show_scrollbars()
+    }
+
     pub fn get_selected_index(&self) -> usize {
         self.selected
     }
@@ -135,7 +140,7 @@ impl<I: ListItem + Clone> ListView<I> {
             .iter()
             .enumerate()
             .filter(|(_, i)| {
-                i.display_left(self.library.clone())
+                i.display_left(&self.library)
                     .to_lowercase()
                     .contains(&query[..].to_lowercase())
             })
@@ -154,6 +159,9 @@ impl<I: ListItem + Clone> ListView<I> {
         self.move_focus_to(max(new, 0) as usize);
     }
 
+    /// Append the currently selected item and all the following ones to the queue after the
+    /// currently playing track and start playing them. Returns true if adding and playing the
+    /// tracks succeeded, false otherwhise.
     fn attempt_play_all_tracks(&self) -> bool {
         let content = self.content.read().unwrap();
         let any = &(*content) as &dyn std::any::Any;
@@ -172,9 +180,25 @@ impl<I: ListItem + Clone> ListView<I> {
         }
     }
 
-    pub fn remove(&self, index: usize) {
+    /// Appends the currently focused item after the currently playing item and starts playing it.
+    fn play_current_item(&mut self) {
+        let mut content = self.content.write().unwrap();
+        if let Some(listitem) = content.get_mut(self.selected) {
+            listitem.play(&self.queue);
+        }
+    }
+
+    /// Remove the item at `index` from the list.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of bounds.
+    pub fn remove(&mut self, index: usize) {
         let mut c = self.content.write().unwrap();
         c.remove(index);
+        if self.selected >= c.len() {
+            self.selected = self.selected.saturating_sub(1);
+        }
     }
 }
 
@@ -194,8 +218,8 @@ impl<I: ListItem + Clone> View for ListView<I> {
                 });
             } else if i < content.len() {
                 let item = &content[i];
-                let currently_playing = item.is_playing(self.queue.clone())
-                    && self.queue.get_current_index() == Some(i);
+                let currently_playing =
+                    item.is_playing(&self.queue) && self.queue.get_current_index() == Some(i);
 
                 let style = if self.selected == i {
                     if currently_playing {
@@ -215,9 +239,9 @@ impl<I: ListItem + Clone> View for ListView<I> {
                     ColorStyle::primary()
                 };
 
-                let left = item.display_left(self.library.clone());
-                let center = item.display_center(self.library.clone());
-                let right = item.display_right(self.library.clone());
+                let left = item.display_left(&self.library);
+                let center = item.display_center(&self.library);
+                let right = item.display_right(&self.library);
                 let draw_center = !center.is_empty();
 
                 // draw left string
@@ -328,31 +352,60 @@ impl<I: ListItem + Clone> View for ListView<I> {
                 position,
                 offset,
             } => {
-                if self.scroller.get_show_scrollbars()
-                    && position
-                        .checked_sub(offset)
-                        .map(|p| self.scroller.start_drag(p))
-                        .unwrap_or(false)
-                {
+                // This is safe as a mouse event is only propagated to a view when it is inside the
+                // view. Therefore underflow shouldn't occur.
+                let view_coordinates_click_position = position - offset;
+
+                let drag_started = if self.has_visible_scrollbars() {
+                    self.scroller.start_drag(view_coordinates_click_position)
+                } else {
+                    false
+                };
+
+                if drag_started {
                     log::debug!("grabbing scroller");
                 } else {
                     let viewport = self.scroller.content_viewport().top_left();
                     let selected_row = position.checked_sub(offset).map(|p| p.y + viewport.y);
-                    if let Some(y) = selected_row.filter(|row| row < &self.content_len(false)) {
-                        self.move_focus_to(y);
+                    if let Some(clicked_row_index) =
+                        selected_row.filter(|row| *row < self.content_len(false))
+                    {
+                        let currently_selected_listitem = self
+                            .content
+                            .read()
+                            .unwrap()
+                            .get(clicked_row_index)
+                            .map(ListItem::as_listitem);
+                        let currently_selected_is_individual = currently_selected_listitem
+                            .filter(|item| item.track().is_some())
+                            .is_some();
+                        if self.selected == clicked_row_index && currently_selected_is_individual {
+                            // The selected position was already focused. Play the item at the
+                            // position as if Enter was pressed. This sort of emulates double
+                            // clicking, which isn't supported by Cursive.
+                            self.queue.clear();
 
-                        let queue = self.queue.clone();
-                        let library = self.library.clone();
-                        if let Some(target) = {
+                            if !self.attempt_play_all_tracks() {
+                                self.play_current_item();
+                            }
+                        } else {
+                            // The clicked position wasn't focused yet or the item is a collection
+                            // that can be opened.
+                            self.move_focus_to(clicked_row_index);
                             let content = self.content.read().unwrap();
-                            content.get(self.selected).map(|t| t.as_listitem())
-                        } {
-                            if let Some(view) = target.open(queue, library) {
-                                return EventResult::Consumed(Some(Callback::from_fn_once(
-                                    move |s| {
-                                        s.on_layout(|_, mut l| l.push_view(view));
-                                    },
-                                )));
+                            let clicked_list_item =
+                                content.get(self.selected).map(ListItem::as_listitem);
+
+                            if let Some(target) = clicked_list_item {
+                                if let Some(view) =
+                                    target.open(self.queue.clone(), self.library.clone())
+                                {
+                                    return EventResult::Consumed(Some(Callback::from_fn_once(
+                                        move |s| {
+                                            s.on_layout(|_, mut l| l.push_view(view));
+                                        },
+                                    )));
+                                }
                             }
                         }
                     }
@@ -386,7 +439,7 @@ impl<I: ListItem + Clone> View for ListView<I> {
                 position,
                 offset,
             } => {
-                if self.scroller.get_show_scrollbars() {
+                if self.has_visible_scrollbars() {
                     self.scroller.drag(position.saturating_sub(offset));
                 }
             }
@@ -425,10 +478,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                 self.queue.clear();
 
                 if !self.attempt_play_all_tracks() {
-                    let mut content = self.content.write().unwrap();
-                    if let Some(item) = content.get_mut(self.selected) {
-                        item.play(self.queue.clone());
-                    }
+                    self.play_current_item();
                 }
 
                 return Ok(CommandResult::Consumed(None));
@@ -437,7 +487,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                 info!("played next");
                 let mut content = self.content.write().unwrap();
                 if let Some(item) = content.get_mut(self.selected) {
-                    item.play_next(self.queue.clone());
+                    item.play_next(&self.queue);
                 }
 
                 return Ok(CommandResult::Consumed(None));
@@ -445,7 +495,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
             Command::Queue => {
                 let mut content = self.content.write().unwrap();
                 if let Some(item) = content.get_mut(self.selected) {
-                    item.queue(self.queue.clone());
+                    item.queue(&self.queue);
                 }
 
                 return Ok(CommandResult::Consumed(None));
@@ -457,7 +507,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                 };
 
                 if let Some(item) = item.as_mut() {
-                    item.save(self.library.clone());
+                    item.save(&self.library);
                 }
 
                 return Ok(CommandResult::Consumed(None));
@@ -469,7 +519,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                 };
 
                 if let Some(item) = item.as_mut() {
-                    item.unsave(self.library.clone());
+                    item.unsave(&self.library);
                 }
 
                 return Ok(CommandResult::Consumed(None));
@@ -542,6 +592,10 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                         if self.selected > 0 {
                             match amount {
                                 MoveAmount::Extreme => self.move_focus_to(0),
+                                MoveAmount::Float(scale) => {
+                                    let amount = (self.last_size.y as f32) * scale;
+                                    self.move_focus(-(amount as i32))
+                                }
                                 MoveAmount::Integer(amount) => self.move_focus(-(*amount)),
                             }
                         }
@@ -551,6 +605,10 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
                         if self.selected < last_idx {
                             match amount {
                                 MoveAmount::Extreme => self.move_focus_to(last_idx),
+                                MoveAmount::Float(scale) => {
+                                    let amount = (self.last_size.y as f32) * scale;
+                                    self.move_focus(amount as i32)
+                                }
                                 MoveAmount::Integer(amount) => self.move_focus(*amount),
                             }
                         }
@@ -591,7 +649,7 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
 
                     match mode {
                         GotoMode::Album => {
-                            if let Some(album) = item.album(queue.clone()) {
+                            if let Some(album) = item.album(&queue) {
                                 let view =
                                     AlbumView::new(queue, library, &album).into_boxed_view_ext();
                                 return Ok(CommandResult::View(view));

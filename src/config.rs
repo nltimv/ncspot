@@ -14,7 +14,9 @@ use crate::serialization::{Serializer, CBOR, TOML};
 
 pub const CLIENT_ID: &str = "d420a117a32841c2b3474932e49fb54b";
 pub const CACHE_VERSION: u16 = 1;
+pub const DEFAULT_COMMAND_KEY: char = ':';
 
+/// The playback state when ncspot is started.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum PlaybackState {
     Playing,
@@ -23,6 +25,7 @@ pub enum PlaybackState {
     Default,
 }
 
+/// The focussed library tab when ncspot is started.
 #[derive(Clone, Serialize, Deserialize, Debug, Hash, strum::EnumIter)]
 #[serde(rename_all = "lowercase")]
 pub enum LibraryTab {
@@ -34,6 +37,7 @@ pub enum LibraryTab {
     Browse,
 }
 
+/// The format used to represent tracks in a list.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct TrackFormat {
     pub left: Option<String>,
@@ -51,6 +55,7 @@ impl TrackFormat {
     }
 }
 
+/// The format used when sending desktop notifications about playback status.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NotificationFormat {
     pub title: Option<String>,
@@ -66,6 +71,7 @@ impl NotificationFormat {
     }
 }
 
+/// The configuration of ncspot.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ConfigValues {
     pub command_key: Option<char>,
@@ -93,8 +99,17 @@ pub struct ConfigValues {
     pub statusbar_format: Option<String>,
     pub library_tabs: Option<Vec<LibraryTab>>,
     pub hide_display_names: Option<bool>,
+    pub credentials: Option<Credentials>,
 }
 
+/// Commands used to obtain user credentials automatically.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Credentials {
+    pub username_cmd: Option<String>,
+    pub password_cmd: Option<String>,
+}
+
+/// The ncspot theme.
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct ConfigTheme {
     pub background: Option<String>,
@@ -106,6 +121,7 @@ pub struct ConfigTheme {
     pub playing_bg: Option<String>,
     pub highlight: Option<String>,
     pub highlight_bg: Option<String>,
+    pub highlight_inactive_bg: Option<String>,
     pub error: Option<String>,
     pub error_bg: Option<String>,
     pub statusbar_progress: Option<String>,
@@ -117,12 +133,14 @@ pub struct ConfigTheme {
     pub search_match: Option<String>,
 }
 
+/// The ordering that is used when representing a playlist.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SortingOrder {
     pub key: SortKey,
     pub direction: SortDirection,
 }
 
+/// The runtime state of the music queue.
 #[derive(Serialize, Default, Deserialize, Debug, Clone)]
 pub struct QueueState {
     pub current_track: Option<usize>,
@@ -131,6 +149,7 @@ pub struct QueueState {
     pub queue: Vec<Playable>,
 }
 
+/// Runtime state that should be persisted accross sessions.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserState {
     pub volume: u16,
@@ -157,19 +176,27 @@ impl Default for UserState {
 }
 
 lazy_static! {
+    /// Configuration files are read/written relative to this directory.
     pub static ref BASE_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 }
 
+/// The complete configuration (state + user configuration) of ncspot.
 pub struct Config {
+    /// The configuration file path.
     filename: String,
+    /// Configuration set by the user, read only.
     values: RwLock<ConfigValues>,
+    /// Runtime state which can't be edited by the user, read/write.
     state: RwLock<UserState>,
 }
 
 impl Config {
-    pub fn new(filename: &str) -> Self {
-        let values = load(filename).unwrap_or_else(|e| {
-            eprintln!("could not load config: {}", e);
+    /// Generate the configuration from the user configuration file and the runtime state file.
+    /// `filename` can be used to look for a differently named configuration file.
+    pub fn new(filename: Option<String>) -> Self {
+        let filename = filename.unwrap_or("config.toml".to_owned());
+        let values = load(&filename).unwrap_or_else(|e| {
+            eprintln!("could not load config: {e}");
             process::exit(1);
         });
 
@@ -192,7 +219,7 @@ impl Config {
         }
 
         Self {
-            filename: filename.to_string(),
+            filename,
             values: RwLock::new(values),
             state: RwLock::new(userstate),
         }
@@ -230,17 +257,25 @@ impl Config {
         crate::theme::load(theme)
     }
 
+    /// Reload the configuration file.
     pub fn reload(&self) {
         let cfg = load(&self.filename).expect("could not reload config");
         *self.values.write().expect("can't writelock config values") = cfg
     }
 }
 
+/// Parse the configuration file with name `filename` at the configuration base path.
 fn load(filename: &str) -> Result<ConfigValues, String> {
     let path = config_path(filename);
     TOML.load_or_generate_default(path, || Ok(ConfigValues::default()), false)
 }
 
+/// Returns the platform app directories for ncspot.
+///
+/// # Panics
+///
+/// This panics if the project directories could not be determined. Use `try_proj_dirs` for a
+/// non-panicking version.
 fn proj_dirs() -> AppDirs {
     try_proj_dirs().unwrap()
 }
@@ -263,6 +298,11 @@ pub fn try_proj_dirs() -> Result<AppDirs, String> {
     }
 }
 
+/// Force create the configuration directory at the default project location, removing anything that
+/// isn't a directory but has the same name. Return the path to the configuration file inside the
+/// directory.
+///
+/// This doesn't create the file, only the containing directory.
 pub fn config_path(file: &str) -> PathBuf {
     let proj_dirs = proj_dirs();
     let cfg_dir = &proj_dirs.config_dir;
@@ -277,6 +317,10 @@ pub fn config_path(file: &str) -> PathBuf {
     cfg
 }
 
+/// Create the cache directory at the default project location, preserving it if it already exists,
+/// and return the path to the cache file inside the directory.
+///
+/// This doesn't create the file, only the containing directory.
 pub fn cache_path(file: &str) -> PathBuf {
     let proj_dirs = proj_dirs();
     let cache_dir = &proj_dirs.cache_dir;
@@ -286,4 +330,14 @@ pub fn cache_path(file: &str) -> PathBuf {
     let mut pb = cache_dir.to_path_buf();
     pb.push(file);
     pb
+}
+
+/// Set the configuration base path. All configuration files are read/written relative to this path.
+pub fn set_configuration_base_path(base_path: Option<PathBuf>) {
+    if let Some(basepath) = base_path {
+        if !basepath.exists() {
+            fs::create_dir_all(&basepath).expect("could not create basepath directory");
+        }
+        *BASE_PATH.write().unwrap() = Some(basepath);
+    }
 }

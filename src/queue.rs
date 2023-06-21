@@ -1,16 +1,14 @@
 use std::cmp::Ordering;
-#[cfg(feature = "notify")]
-use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, RwLock};
 
-use log::{debug, error, info};
+use log::{debug, info};
 #[cfg(feature = "notify")]
-use notify_rust::{Hint, Notification, Urgency};
+use notify_rust::Notification;
 
 use rand::prelude::*;
 use strum_macros::Display;
 
-use crate::config::{Config, NotificationFormat, PlaybackState};
+use crate::config::{Config, PlaybackState};
 use crate::library::Library;
 use crate::model::playable::Playable;
 use crate::spotify::PlayerEvent;
@@ -47,10 +45,6 @@ pub struct Queue {
     current_track: RwLock<Option<usize>>,
     spotify: Spotify,
     cfg: Arc<Config>,
-    /// The notification id that uniquely identifies the notification of the
-    /// currently playing song.
-    #[cfg(feature = "notify")]
-    notification_id: Arc<AtomicU32>,
     library: Arc<Library>,
 }
 
@@ -64,8 +58,6 @@ impl Queue {
             current_track: RwLock::new(queue_state.current_track),
             random_order: RwLock::new(queue_state.random_order),
             cfg,
-            #[cfg(feature = "notify")]
-            notification_id: Arc::new(AtomicU32::new(0)),
             library,
         };
 
@@ -321,7 +313,6 @@ impl Queue {
 
             #[cfg(feature = "notify")]
             if self.cfg.values().notify.unwrap_or(false) {
-                let notification_id = self.notification_id.clone();
                 std::thread::spawn({
                     // use same parser as track_format, Playable::format
                     let format = self
@@ -330,20 +321,16 @@ impl Queue {
                         .notification_format
                         .clone()
                         .unwrap_or_default();
-                    let default_title = NotificationFormat::default().title.unwrap();
+                    let default_title = crate::config::NotificationFormat::default().title.unwrap();
                     let title = format.title.unwrap_or_else(|| default_title.clone());
 
-                    let default_body = NotificationFormat::default().body.unwrap();
+                    let default_body = crate::config::NotificationFormat::default().body.unwrap();
                     let body = format.body.unwrap_or_else(|| default_body.clone());
 
-                    let summary_txt = Playable::format(track, &title, self.library.clone());
-                    let body_txt = Playable::format(track, &body, self.library.clone());
-                    let cover_url = if cfg!(feature = "cover") {
-                        track.cover_url()
-                    } else {
-                        None
-                    };
-                    move || send_notification(&summary_txt, &body_txt, cover_url, notification_id)
+                    let summary_txt = Playable::format(track, &title, &self.library);
+                    let body_txt = Playable::format(track, &body, &self.library);
+                    let cover_url = track.cover_url();
+                    move || send_notification(&summary_txt, &body_txt, cover_url)
                 });
             }
         }
@@ -507,26 +494,16 @@ impl Queue {
 /// `notification_id`: Unique id for a notification, that can be used to operate
 /// on a previous notification (for example to close it).
 #[cfg(feature = "notify")]
-pub fn send_notification(
-    summary_txt: &str,
-    body_txt: &str,
-    cover_url: Option<String>,
-    notification_id: Arc<AtomicU32>,
-) {
-    let current_notification_id = notification_id.load(std::sync::atomic::Ordering::Relaxed);
-
+pub fn send_notification(summary_txt: &str, body_txt: &str, cover_url: Option<String>) {
     let mut n = Notification::new();
-    n.appname("ncspot")
-        .id(current_notification_id)
-        .summary(summary_txt)
-        .body(body_txt);
+    n.appname("ncspot").summary(summary_txt).body(body_txt);
 
     // album cover image
     if let Some(u) = cover_url {
         let path = crate::utils::cache_path_for_url(u.to_string());
         if !path.exists() {
             if let Err(e) = crate::utils::download(u, path.clone()) {
-                error!("Failed to download cover: {}", e);
+                log::error!("Failed to download cover: {}", e);
             }
         }
         n.icon(path.to_str().unwrap());
@@ -534,24 +511,16 @@ pub fn send_notification(
 
     // XDG desktop entry hints
     #[cfg(all(unix, not(target_os = "macos")))]
-    n.urgency(Urgency::Low)
-        .hint(Hint::Transient(true))
-        .hint(Hint::DesktopEntry("ncspot".into()));
+    n.urgency(notify_rust::Urgency::Low)
+        .hint(notify_rust::Hint::Transient(true))
+        .hint(notify_rust::Hint::DesktopEntry("ncspot".into()));
 
     match n.show() {
-        Ok(_handle) => {
+        Ok(handle) => {
             // only available for XDG
             #[cfg(all(unix, not(target_os = "macos")))]
-            {
-                let new_notification_id = _handle.id();
-                log::debug!(
-                    "new notification id: {}, previously: {}",
-                    new_notification_id,
-                    current_notification_id
-                );
-                notification_id.store(new_notification_id, std::sync::atomic::Ordering::Relaxed);
-            }
+            info!("Created notification: {}", handle.id());
         }
-        Err(e) => error!("Failed to send notification cover: {}", e),
+        Err(e) => log::error!("Failed to send notification cover: {}", e),
     }
 }

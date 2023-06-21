@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::application::UserData;
 use crate::command::{
     parse, Command, GotoMode, JumpMode, MoveAmount, MoveMode, SeekDirection, ShiftMode, TargetMode,
 };
@@ -19,7 +20,6 @@ use crate::ui::help::HelpView;
 use crate::ui::layout::Layout;
 use crate::ui::modal::Modal;
 use crate::ui::search_results::SearchResultsView;
-use crate::UserData;
 use cursive::event::{Event, Key};
 use cursive::traits::View;
 use cursive::views::Dialog;
@@ -52,7 +52,7 @@ impl CommandManager {
         config: Arc<Config>,
         events: EventManager,
     ) -> CommandManager {
-        let bindings = RefCell::new(Self::get_bindings(config.clone()));
+        let bindings = RefCell::new(Self::get_bindings(&config));
         CommandManager {
             aliases: HashMap::new(),
             bindings,
@@ -64,7 +64,7 @@ impl CommandManager {
         }
     }
 
-    pub fn get_bindings(config: Arc<Config>) -> HashMap<String, Vec<Command>> {
+    pub fn get_bindings(config: &Config) -> HashMap<String, Vec<Command>> {
         let config = config.values();
         let mut kb = if config.default_keybindings.unwrap_or(true) {
             Self::default_keybindings()
@@ -221,8 +221,7 @@ impl CommandManager {
 
                 // update bindings
                 self.unregister_keybindings(s);
-                self.bindings
-                    .replace(Self::get_bindings(self.config.clone()));
+                self.bindings.replace(Self::get_bindings(&self.config));
                 self.register_keybindings(s);
                 Ok(None)
             }
@@ -267,6 +266,10 @@ impl CommandManager {
                 let cmd = std::ffi::CString::new(cmd.clone()).unwrap();
                 let result = unsafe { libc::system(cmd.as_ptr()) };
                 log::info!("Exit code: {}", result);
+                Ok(None)
+            }
+            Command::Reconnect => {
+                self.spotify.shutdown();
                 Ok(None)
             }
 

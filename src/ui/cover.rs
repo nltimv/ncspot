@@ -12,12 +12,12 @@ use log::{debug, error};
 
 use crate::command::{Command, GotoMode};
 use crate::commands::CommandResult;
+use crate::config::Config;
 use crate::library::Library;
 use crate::queue::Queue;
 use crate::traits::{IntoBoxedViewExt, ListItem, ViewExt};
 use crate::ui::album::AlbumView;
 use crate::ui::artist::ArtistView;
-use crate::Config;
 
 pub struct CoverView {
     queue: Arc<Queue>,
@@ -151,7 +151,7 @@ impl CoverView {
         if ueberzug.is_none() {
             *ueberzug = Some(
                 std::process::Command::new("ueberzug")
-                    .args(&["layer", "--silent"])
+                    .args(["layer", "--silent"])
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .spawn()?,
@@ -231,12 +231,12 @@ impl ViewExt for CoverView {
         match cmd {
             Command::Save => {
                 if let Some(mut track) = self.queue.get_current() {
-                    track.save(self.library.clone());
+                    track.save(&self.library);
                 }
             }
             Command::Delete => {
                 if let Some(mut track) = self.queue.get_current() {
-                    track.unsave(self.library.clone());
+                    track.unsave(&self.library);
                 }
             }
             #[cfg(feature = "share_clipboard")]
@@ -259,7 +259,7 @@ impl ViewExt for CoverView {
 
                     match mode {
                         GotoMode::Album => {
-                            if let Some(album) = track.album(queue.clone()) {
+                            if let Some(album) = track.album(&queue) {
                                 let view =
                                     AlbumView::new(queue, library, &album).into_boxed_view_ext();
                                 return Ok(CommandResult::View(view));

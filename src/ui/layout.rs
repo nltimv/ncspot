@@ -1,21 +1,24 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use cursive::align::HAlign;
 use cursive::direction::Direction;
-use cursive::event::{AnyCb, Event, EventResult, MouseButton, MouseEvent};
+use cursive::event::{AnyCb, Event, EventResult, Key, MouseButton, MouseEvent};
 use cursive::theme::{ColorStyle, ColorType, Theme};
 use cursive::traits::View;
 use cursive::vec::Vec2;
 use cursive::view::{CannotFocus, IntoBoxedView, Selector};
 use cursive::views::EditView;
 use cursive::{Cursive, Printer};
-use log::debug;
 use unicode_width::UnicodeWidthStr;
 
-use crate::command::Command;
+use crate::application::UserData;
+use crate::command::{self, Command, JumpMode};
 use crate::commands::CommandResult;
+use crate::config::{self, Config};
 use crate::events;
+use crate::ext_traits::CursiveExt;
 use crate::traits::{IntoBoxedViewExt, ViewExt};
 
 pub struct Layout {
@@ -23,36 +26,82 @@ pub struct Layout {
     stack: HashMap<String, Vec<Box<dyn ViewExt>>>,
     statusbar: Box<dyn View>,
     focus: Option<String>,
-    pub cmdline: EditView,
+    cmdline: EditView,
     cmdline_focus: bool,
     result: Result<Option<String>, String>,
     result_time: Option<SystemTime>,
-    screenchange: bool,
     last_size: Vec2,
     ev: events::EventManager,
     theme: Theme,
+    configuration: Arc<Config>,
 }
 
 impl Layout {
-    pub fn new<T: IntoBoxedView>(status: T, ev: &events::EventManager, theme: Theme) -> Layout {
+    pub fn new<T: IntoBoxedView>(
+        status: T,
+        ev: &events::EventManager,
+        theme: Theme,
+        configuration: Arc<Config>,
+    ) -> Layout {
         let style = ColorStyle::new(
             ColorType::Color(*theme.palette.custom("cmdline_bg").unwrap()),
             ColorType::Color(*theme.palette.custom("cmdline").unwrap()),
         );
+        let mut command_line_input = EditView::new().filler(" ").style(style);
+
+        let event_manager = ev.clone();
+        // 1. When a search was submitted on the commandline...
+        command_line_input.set_on_submit(move |s, cmd| {
+            // 2. Clear the commandline on Layout...
+            s.on_layout(|_, mut layout| layout.clear_cmdline());
+
+            // 3. Get the actual command without the prefix (like `:` or `/`)...
+            let mut command_characters = cmd.chars();
+            command_characters.next();
+            let cmd_without_prefix = command_characters.as_str();
+            if cmd.strip_prefix('/').is_some() {
+                // 4. If it is a search command...
+
+                // 5. Send a jump command with the search query to the command manager.
+                let command = Command::Jump(JumpMode::Query(cmd_without_prefix.to_string()));
+                if let Some(data) = s.user_data::<UserData>().cloned() {
+                    data.cmd.handle(s, command);
+                }
+            } else {
+                // 4. If it is an actual command...
+
+                // 5. Parse the command and...
+                match command::parse(cmd_without_prefix) {
+                    Ok(commands) => {
+                        // 6. Send the parsed command to the command manager.
+                        if let Some(data) = s.user_data::<UserData>().cloned() {
+                            for cmd in commands {
+                                data.cmd.handle(s, cmd);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        // 6. Set an error message on the global layout.
+                        s.on_layout(|_, mut layout| layout.set_result(Err(err.to_string())));
+                    }
+                }
+            }
+            event_manager.trigger();
+        });
 
         Layout {
             screens: HashMap::new(),
             stack: HashMap::new(),
             statusbar: status.into_boxed_view(),
             focus: None,
-            cmdline: EditView::new().filler(" ").style(style),
+            cmdline: command_line_input,
             cmdline_focus: false,
             result: Ok(None),
             result_time: None,
-            screenchange: true,
             last_size: Vec2::new(0, 0),
             ev: ev.clone(),
             theme,
+            configuration,
         }
     }
 
@@ -98,7 +147,6 @@ impl Layout {
         let s = id.into();
         self.focus = Some(s);
         self.cmdline_focus = false;
-        self.screenchange = true;
 
         // trigger a redraw
         self.ev.trigger();
@@ -197,6 +245,22 @@ impl Layout {
             None
         }
     }
+
+    /// Propagate the given event to the command line.
+    fn command_line_handle_event(&mut self, event: Event) -> EventResult {
+        let is_left_right_event = matches!(event, Event::Key(Key::Left) | Event::Key(Key::Right));
+        let result = self.cmdline.on_event(event);
+
+        if self.cmdline.get_content().is_empty() {
+            self.clear_cmdline();
+        }
+
+        if is_left_right_event {
+            EventResult::consumed()
+        } else {
+            result
+        }
+    }
 }
 
 impl View for Layout {
@@ -218,7 +282,7 @@ impl View for Layout {
             // back button + title
             if !self.is_current_stack_empty() {
                 printer.with_color(ColorStyle::title_secondary(), |printer| {
-                    printer.print((1, 0), &format!("< {}", screen_title));
+                    printer.print((1, 0), &format!("< {screen_title}"));
                 });
             }
 
@@ -255,10 +319,7 @@ impl View for Layout {
 
             printer.with_color(style, |printer| {
                 printer.print_hline((0, printer.size.y - cmdline_height), printer.size.x, " ");
-                printer.print(
-                    (0, printer.size.y - cmdline_height),
-                    &format!("ERROR: {}", e),
-                );
+                printer.print((0, printer.size.y - cmdline_height), &format!("ERROR: {e}"));
             });
         }
 
@@ -278,13 +339,6 @@ impl View for Layout {
         if let Some(view) = self.get_current_view_mut() {
             view.layout(Vec2::new(size.x, size.y - 3));
         }
-
-        // the focus view has changed, let the views know so they can redraw
-        // their items
-        if self.screenchange {
-            debug!("layout: new screen selected: {:?}", self.focus);
-            self.screenchange = false;
-        }
     }
 
     fn required_size(&mut self, constraint: Vec2) -> Vec2 {
@@ -292,60 +346,103 @@ impl View for Layout {
     }
 
     fn on_event(&mut self, event: Event) -> EventResult {
-        // handle mouse events in cmdline/statusbar area
-        if let Event::Mouse {
-            position,
-            event: mouseevent,
-            ..
-        } = event
-        {
-            if position.y == 0 {
-                if mouseevent == MouseEvent::Press(MouseButton::Left)
-                    && !self.is_current_stack_empty()
-                    && position.x
-                        < self
-                            .get_current_screen()
-                            .map(|screen| screen.title())
-                            .unwrap_or_default()
-                            .len()
-                            + 3
-                {
-                    self.pop_view();
-                }
-                return EventResult::consumed();
+        match event {
+            Event::Key(Key::Esc) if self.cmdline_focus => {
+                self.clear_cmdline();
+                EventResult::consumed()
             }
-
-            let result = self.get_result();
-
-            let cmdline_visible = self.cmdline.get_content().len() > 0;
-            let mut cmdline_height = usize::from(cmdline_visible);
-            if result.as_ref().map(Option::is_some).unwrap_or(true) {
-                cmdline_height += 1;
-            }
-
-            if position.y >= self.last_size.y.saturating_sub(2 + cmdline_height)
-                && position.y < self.last_size.y - cmdline_height
+            _ if self.cmdline_focus => self.command_line_handle_event(event),
+            Event::Char(character)
+                if !self.cmdline_focus
+                    && (character
+                        == self
+                            .configuration
+                            .values()
+                            .command_key
+                            .unwrap_or(config::DEFAULT_COMMAND_KEY)
+                        || character == '/') =>
             {
-                self.statusbar.on_event(
-                    event.relativized(Vec2::new(0, self.last_size.y - 2 - cmdline_height)),
-                );
-                return EventResult::Consumed(None);
+                let result = self
+                    .get_current_view_mut()
+                    .map(|view| view.on_event(event))
+                    .unwrap_or(EventResult::Ignored);
+
+                if let EventResult::Ignored = result {
+                    let command_key = self
+                        .configuration
+                        .values()
+                        .command_key
+                        .unwrap_or(config::DEFAULT_COMMAND_KEY);
+
+                    if character == command_key {
+                        self.enable_cmdline(command_key);
+                        EventResult::consumed()
+                    } else if character == '/' {
+                        self.enable_jump();
+                        EventResult::consumed()
+                    } else {
+                        EventResult::Ignored
+                    }
+                } else {
+                    result
+                }
             }
-        }
+            Event::Mouse {
+                position,
+                event: mouse_event,
+                ..
+            } => {
+                // Handle mouse events in the command/jump area.
+                if position.y == 0 {
+                    if mouse_event == MouseEvent::Press(MouseButton::Left)
+                        && !self.is_current_stack_empty()
+                        && position.x
+                            < self
+                                .get_current_screen()
+                                .map(|screen| screen.title())
+                                .unwrap_or_default()
+                                .len()
+                                + 3
+                    {
+                        self.pop_view();
+                    }
+                    return EventResult::consumed();
+                }
 
-        if self.cmdline_focus {
-            debug!("cmdline event");
-            return self.cmdline.on_event(event);
-        }
+                let result = self.get_result();
 
-        if let Some(view) = self.get_current_view_mut() {
-            view.on_event(event.relativized((0, 1)))
-        } else {
-            EventResult::Ignored
+                let cmdline_visible = self.cmdline.get_content().len() > 0;
+                let mut cmdline_height = usize::from(cmdline_visible);
+                if result.as_ref().map(Option::is_some).unwrap_or(true) {
+                    cmdline_height += 1;
+                }
+
+                if position.y >= self.last_size.y.saturating_sub(2 + cmdline_height)
+                    && position.y < self.last_size.y - cmdline_height
+                {
+                    self.statusbar.on_event(
+                        event.relativized(Vec2::new(0, self.last_size.y - 2 - cmdline_height)),
+                    );
+                    return EventResult::consumed();
+                }
+
+                if let Some(view) = self.get_current_view_mut() {
+                    view.on_event(event.relativized((0, 1)))
+                } else {
+                    EventResult::Ignored
+                }
+            }
+            _ => {
+                if let Some(view) = self.get_current_view_mut() {
+                    view.on_event(event.relativized((0, 1)))
+                } else {
+                    EventResult::Ignored
+                }
+            }
         }
     }
 
-    fn call_on_any<'a>(&mut self, s: &Selector, c: AnyCb<'a>) {
+    fn call_on_any(&mut self, s: &Selector, c: AnyCb<'_>) {
         if let Some(view) = self.get_current_view_mut() {
             view.call_on_any(s, c);
         }

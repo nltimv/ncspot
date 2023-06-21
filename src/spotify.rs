@@ -23,12 +23,12 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
+use crate::application::ASYNC_RUNTIME;
 use crate::config;
 use crate::events::{Event, EventManager};
 use crate::model::playable::Playable;
 use crate::spotify_api::WebApi;
 use crate::spotify_worker::{Worker, WorkerCommand};
-use crate::ASYNC_RUNTIME;
 
 pub const VOLUME_PERCENT: u16 = ((u16::max_value() as f64) * 1.0 / 100.0) as u16;
 
@@ -40,6 +40,8 @@ pub enum PlayerEvent {
     FinishedTrack,
 }
 
+// TODO: Rename or document this as it isn't immediately clear what it represents/does from the
+// name.
 #[derive(Clone)]
 pub struct Spotify {
     events: EventManager,

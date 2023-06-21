@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::{Arc, RwLock};
 
 use crate::config;
+use crate::utils::ms_to_hms;
 use chrono::{DateTime, Utc};
 use rspotify::model::album::FullAlbum;
 use rspotify::model::track::{FullTrack, SavedTrack, SimplifiedTrack};
@@ -58,7 +59,7 @@ impl Track {
             title: track.name.clone(),
             track_number: track.track_number,
             disc_number: track.disc_number,
-            duration: track.duration.as_millis() as u32,
+            duration: track.duration.num_milliseconds() as u32,
             artists,
             artist_ids,
             album: Some(album.name.clone()),
@@ -72,9 +73,7 @@ impl Track {
     }
 
     pub fn duration_str(&self) -> String {
-        let minutes = self.duration / 60_000;
-        let seconds = (self.duration / 1000) % 60;
-        format!("{:02}:{:02}", minutes, seconds)
+        ms_to_hms(self.duration)
     }
 }
 
@@ -97,7 +96,7 @@ impl From<&SimplifiedTrack> for Track {
             title: track.name.clone(),
             track_number: track.track_number,
             disc_number: track.disc_number,
-            duration: track.duration.as_millis() as u32,
+            duration: track.duration.num_milliseconds() as u32,
             artists,
             artist_ids,
             album: None,
@@ -136,7 +135,7 @@ impl From<&FullTrack> for Track {
             title: track.name.clone(),
             track_number: track.track_number,
             disc_number: track.disc_number,
-            duration: track.duration.as_millis() as u32,
+            duration: track.duration.num_milliseconds() as u32,
             artists,
             artist_ids,
             album: Some(track.album.name.clone()),
@@ -177,12 +176,12 @@ impl fmt::Debug for Track {
 }
 
 impl ListItem for Track {
-    fn is_playing(&self, queue: Arc<Queue>) -> bool {
+    fn is_playing(&self, queue: &Queue) -> bool {
         let current = queue.get_current();
         current.map(|t| t.id() == self.id).unwrap_or(false)
     }
 
-    fn display_left(&self, library: Arc<Library>) -> String {
+    fn display_left(&self, library: &Library) -> String {
         let formatting = library
             .cfg
             .values()
@@ -194,11 +193,11 @@ impl ListItem for Track {
         if left != default {
             Playable::format(&Playable::Track(self.clone()), &left, library)
         } else {
-            format!("{}", self)
+            format!("{self}")
         }
     }
 
-    fn display_center(&self, library: Arc<Library>) -> String {
+    fn display_center(&self, library: &Library) -> String {
         let formatting = library
             .cfg
             .values()
@@ -214,7 +213,7 @@ impl ListItem for Track {
         }
     }
 
-    fn display_right(&self, library: Arc<Library>) -> String {
+    fn display_right(&self, library: &Library) -> String {
         let formatting = library
             .cfg
             .values()
@@ -228,7 +227,7 @@ impl ListItem for Track {
         } else {
             let saved = if library.is_saved_track(&Playable::Track(self.clone())) {
                 if library.cfg.values().use_nerdfont.unwrap_or(false) {
-                    "\u{f62b}"
+                    "\u{f012c}"
                 } else {
                     "✓"
                 }
@@ -239,20 +238,20 @@ impl ListItem for Track {
         }
     }
 
-    fn play(&mut self, queue: Arc<Queue>) {
+    fn play(&mut self, queue: &Queue) {
         let index = queue.append_next(&vec![Playable::Track(self.clone())]);
         queue.play(index, true, false);
     }
 
-    fn play_next(&mut self, queue: Arc<Queue>) {
+    fn play_next(&mut self, queue: &Queue) {
         queue.insert_after_current(Playable::Track(self.clone()));
     }
 
-    fn queue(&mut self, queue: Arc<Queue>) {
+    fn queue(&mut self, queue: &Queue) {
         queue.append(Playable::Track(self.clone()));
     }
 
-    fn toggle_saved(&mut self, library: Arc<Library>) {
+    fn toggle_saved(&mut self, library: &Library) {
         if library.is_saved_track(&Playable::Track(self.clone())) {
             library.unsave_tracks(vec![self], true);
         } else {
@@ -260,11 +259,11 @@ impl ListItem for Track {
         }
     }
 
-    fn save(&mut self, library: Arc<Library>) {
+    fn save(&mut self, library: &Library) {
         library.save_tracks(vec![self], true);
     }
 
-    fn unsave(&mut self, library: Arc<Library>) {
+    fn unsave(&mut self, library: &Library) {
         library.unsave_tracks(vec![self], true);
     }
 
@@ -307,10 +306,10 @@ impl ListItem for Track {
     fn share_url(&self) -> Option<String> {
         self.id
             .clone()
-            .map(|id| format!("https://open.spotify.com/track/{}", id))
+            .map(|id| format!("https://open.spotify.com/track/{id}"))
     }
 
-    fn album(&self, queue: Arc<Queue>) -> Option<Album> {
+    fn album(&self, queue: &Queue) -> Option<Album> {
         let spotify = queue.get_spotify();
 
         match self.album_id {
@@ -334,7 +333,7 @@ impl ListItem for Track {
     }
 
     #[inline]
-    fn is_saved(&self, library: Arc<Library>) -> Option<bool> {
+    fn is_saved(&self, library: &Library) -> Option<bool> {
         Some(library.is_saved_track(&Playable::Track(self.clone())))
     }
 
