@@ -33,7 +33,7 @@ here are the runtime dependencies:
 - `dbus`, `libncurses`, `libssl`
 - `libpulse` (or `portaudio`, if built using the PortAudio backend)
 - `libxcb` (if built with the `clipboard` feature)
-- `ueberzug` (if built with the `cover` feature)
+- `ueberzug` or a compatible implementation (e.g. `ueberzugpp`) (if built with the `cover` feature)
 
 ### On BSD's
 Your distribution may have packaged `ncspot` in its package repository.
@@ -161,7 +161,7 @@ Note: \<FOO\> - mandatory arg; [BAR] - optional arg
 | `playpause`<br/>Aliases: `pause`, `toggleplay`, `toggleplayback` | Toggle playback.                                                                                                                                                                                                                                                |
 | `stop`                                                           | Stop playback.                                                                                                                                                                                                                                                  |
 | `seek` [`+`\|`-`]\<TIME\>                                        | Seek to the specified position, or seek relative to current position by prepending `+`/`-`.<br/>\* TIME is anything accepted by [parse_duration](https://docs.rs/parse_duration/latest/parse_duration/)<br/>\* Default unit is `ms` for backward compatibility. |
-| `move` \<DIRECTION\> \<STEP_SIZE\>                               | Scroll the current view `up`/`down`/`left`/`right` with integer step sizes, or `pageup`/`pagedown`/`pageleft`/`pageright` with float step sizes.
+| `move` \<DIRECTION\> \<STEP_SIZE\>                               | Scroll the current view `up`/`down`/`left`/`right` with integer step sizes, or `pageup`/`pagedown`/`pageleft`/`pageright` with float step sizes.                                                                                                                |
 | `repeat` [REPEAT_MODE]<br/>Alias: `loop`                         | Set repeat mode. Omit argument to step through the available modes.<br/>\* Valid values for REPEAT_MODE: `list` (aliases: `playlist`, `queue`), `track` (aliases: `once`, `single`), `none` (alias: `off`)                                                      |
 | `shuffle` [`on`\|`off`]                                          | Enable or disable shuffle. Omit argument to toggle.                                                                                                                                                                                                             |
 | `previous`                                                       | Play the previous track.                                                                                                                                                                                                                                        |
@@ -176,6 +176,8 @@ Note: \<FOO\> - mandatory arg; [BAR] - optional arg
 | `noop`                                                           | Do nothing. Useful for disabling default keybindings. See [custom keybindings](#custom-keybindings).                                                                                                                                                            |
 | `reload`                                                         | Reload the configuration from disk. See [Configuration](#configuration).                                                                                                                                                                                        |
 | `reconnect`                                                      | Reconnect to Spotify (useful when session has expired or connection was lost                                                                                                                                                                                    |
+| `add [current]`                                                  | Add selected track to playlist, if `current` is passed the currently playing track will be added                                                                                                                                                                |
+| `save [current]`                                                 | Save selected item, if `current` is passed the currently playing item will be saved                                                                                                                                                                             |
 
 ## Remote control (IPC)
 Apart from MPRIS, ncspot will also create a domain socket on UNIX platforms
@@ -427,8 +429,10 @@ body = "%artists"
 ### Cover Drawing
 When compiled with the `cover` feature, `ncspot` can draw the album art of the
 current track in a dedicated view (`:focus cover` or <kbd>F8</kbd> by default)
-using [Überzug](https://github.com/seebye/ueberzug). For more information on
-installation and terminal compatibility, consult that repository.
+using Überzug. The original project has been abandoned, therefore using a
+compatible implementation such as [Überzug++](https://github.com/jstkdng/ueberzugpp)
+is recommended. For more information on installation and terminal
+compatibility, consult that repository.
 
 To allow scaling up the album art beyond its native resolution (640x640 for
 Spotify covers), use the config key `cover_max_scale`. This is especially useful

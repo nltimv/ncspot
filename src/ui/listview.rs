@@ -220,11 +220,17 @@ impl<I: ListItem + Clone> View for ListView<I> {
                 let item = &content[i];
                 let currently_playing =
                     item.is_playing(&self.queue) && self.queue.get_current_index() == Some(i);
+                let is_local = item.track().map(|t| t.is_local).unwrap_or_default();
 
                 let style = if self.selected == i {
                     if currently_playing {
                         ColorStyle::new(
                             *printer.theme.palette.custom("playing_selected").unwrap(),
+                            ColorType::Palette(PaletteColor::Highlight),
+                        )
+                    } else if is_local {
+                        ColorStyle::new(
+                            ColorType::Palette(PaletteColor::Secondary),
                             ColorType::Palette(PaletteColor::Highlight),
                         )
                     } else {
@@ -235,6 +241,8 @@ impl<I: ListItem + Clone> View for ListView<I> {
                         ColorType::Color(*printer.theme.palette.custom("playing").unwrap()),
                         ColorType::Color(*printer.theme.palette.custom("playing_bg").unwrap()),
                     )
+                } else if is_local {
+                    ColorStyle::secondary()
                 } else {
                     ColorStyle::primary()
                 };
@@ -508,6 +516,25 @@ impl<I: ListItem + Clone> ViewExt for ListView<I> {
 
                 if let Some(item) = item.as_mut() {
                     item.save(&self.library);
+                }
+
+                return Ok(CommandResult::Consumed(None));
+            }
+            Command::Add => {
+                let item = {
+                    let content = self.content.read().unwrap();
+                    content.get(self.selected).cloned()
+                };
+
+                if let Some(track) = item {
+                    if let Some(track) = track.track() {
+                        let dialog = ContextMenu::add_track_dialog(
+                            self.library.clone(),
+                            self.queue.get_spotify(),
+                            track,
+                        );
+                        return Ok(CommandResult::Modal(Box::new(dialog)));
+                    }
                 }
 
                 return Ok(CommandResult::Consumed(None));
